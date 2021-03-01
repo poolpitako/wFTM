@@ -1,5 +1,5 @@
 import pytest
-from brownie import config, Contract
+from brownie import config, Contract, Wei
 
 
 @pytest.fixture
@@ -49,12 +49,15 @@ def vault(pm, gov, rewards, guardian, management, wFTM):
     vault.initialize(wFTM, gov, rewards, "", "", guardian)
     vault.setDepositLimit(2 ** 256 - 1, {"from": gov})
     vault.setManagement(management, {"from": gov})
+    vault.setManagementFee(0, {"from": gov})
     yield vault
 
 
 @pytest.fixture
-def strategy(strategist, keeper, vault, Strategy, gov, fMint, fStaking, fUSD, uni):
-    strategy = strategist.deploy(Strategy, vault, fMint, fStaking, fUSD, uni)
+def strategy(
+    strategist, keeper, vault, Strategy, gov, fMint, fStaking, fUSD, fusdVault, uni
+):
+    strategy = strategist.deploy(Strategy, vault, fMint, fStaking, fUSD, fusdVault, uni)
     strategy.setKeeper(keeper)
     vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
     yield strategy
@@ -76,6 +79,11 @@ def fMint():
 
 
 @pytest.fixture
+def mockMint(gov, MockMint, fMint):
+    yield gov.deploy(MockMint, fMint)
+
+
+@pytest.fixture
 def fStaking():
     yield Contract("0x073e408E5897b3358edcf130199Cfd895769D3E4")
 
@@ -86,10 +94,18 @@ def fUSD():
 
 
 @pytest.fixture
+def fUSD_whale(accounts):
+    yield accounts.at("0x3bfC4807c49250b7D966018EE596fd9D5C677e3D", force=True)
+
+
+@pytest.fixture
 def uni():
     yield Contract("0x67A937eA41Cd05ec8c832a044afC0100F30Aa4b5")
 
 
-#@pytest.fixture
-#def collateral_pool(fMint):
-    #yield Contract(fMint.getCollateralPool())
+@pytest.fixture
+def fusdVault(accounts):
+    vault = Contract("0x4b2de374d480efa96cb093cefcca23d97903a6ea")
+    fusd_gov = accounts.at(vault.governance(), force=True)
+    vault.setDepositLimit(Wei("1000 ether"), {"from": fusd_gov})
+    yield vault

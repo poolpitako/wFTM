@@ -2,24 +2,43 @@ import brownie
 from brownie import Contract, Wei
 
 
-def test_operation(vault, strategy, wFTM, strategist, wFTM_whale, alice, fMint, fUSD, fStaking):
-    wFTM.transfer(alice, Wei("100 ether"), {"from": wFTM_whale})
-    wFTM.approve(vault, 2 ** 256 -1, {"from": alice})
-
-    #wFTM.approve(fMint, 2 ** 256 -1, {'from': alice})
-    #fMint.mustDeposit(wFTM, wFTM.balanceOf(alice), {'from': alice})
-
-
+def test_operation(
+    chain,
+    gov,
+    vault,
+    strategy,
+    wFTM,
+    wFTM_whale,
+    alice,
+    fUSD,
+    fusdVault,
+    fUSD_whale,
+    fMint,
+    fStaking,
+):
+    wFTM.transfer(alice, Wei("1000 ether"), {"from": wFTM_whale})
+    wFTM.approve(vault, 2 ** 256 - 1, {"from": alice})
     vault.deposit({"from": alice})
 
     # harvest
-    strategy.harvest()
-    assert 1==2
-    assert token.balanceOf(strategy.address) == amount
+    strategy.harvest({"from": gov})
 
-    # tend()
-    strategy.tend()
+    assert strategy.getCurrentRatio() >= strategy.getTargetRatio()
+    assert fusdVault.balanceOf(strategy) > 0
 
-    # withdrawal
-    vault.withdraw({"from": accounts[0]})
-    assert token.balanceOf(accounts[0]) != 0
+    chain.sleep(604800)
+    chain.mine(1)
+
+    # Donate some fUSD to the fusdVault to mock earnings
+    fUSD.transfer(fusdVault, Wei("50 ether"), {"from": fUSD_whale})
+
+    # Run Harvest
+    tx = strategy.harvest({"from": gov})
+    chain.sleep(604800)
+    chain.mine(1)
+
+    vault.withdraw({"from": alice})
+    assert wFTM.balanceOf(alice) > Wei("1000 ether")
+    assert strategy.balanceOfCollateral() == 0
+    assert strategy.balanceOfDebt() == 0
+    assert fusdVault.totalAssets() == 0

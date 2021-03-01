@@ -26,11 +26,7 @@ interface IFMint {
 
     function getRewardEligibilityRatio4dec() external view returns (uint256);
 
-    function maxToMint(
-        address _account,
-        address _token,
-        uint256 _ratio
-    ) external view returns (uint256);
+    function fMintFee4dec() external view returns (uint256);
 
     function mustDeposit(address _token, uint256 _amount) external;
 

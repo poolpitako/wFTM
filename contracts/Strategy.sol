@@ -3,7 +3,7 @@ pragma solidity 0.6.12;
 pragma experimental ABIEncoderV2;
 
 // These are the core Yearn libraries
-import {BaseStrategy, VaultAPI} from "@yearnvaults/contracts/BaseStrategy.sol";
+import {BaseStrategy} from "@yearnvaults/contracts/BaseStrategy.sol";
 import {
     SafeERC20,
     SafeMath,
@@ -16,19 +16,20 @@ import "../interfaces/IFMint.sol";
 import "../interfaces/IFStake.sol";
 import "../interfaces/IFantomDeFiTokenStorage.sol";
 import "../interfaces/Uni.sol";
+import "../interfaces/IVault.sol";
 
 contract Strategy is BaseStrategy {
     using SafeERC20 for IERC20;
     using Address for address;
     using SafeMath for uint256;
 
-    uint256 public BASE = 1000;
+    uint256 public RATIO_DECIMALS = 10000;
     uint256 public MAX_RATIO = uint256(-1);
     uint256 public MIN_MINT = 50 * 1e18;
 
     IFMint public fMint;
     IFStake public fStake;
-    VaultAPI public fusdVault;
+    IVault public fusdVault;
     Uni public uni;
     address public fUSD;
 
@@ -42,7 +43,7 @@ contract Strategy is BaseStrategy {
     ) public BaseStrategy(_vault) {
         fMint = IFMint(_fMint);
         fStake = IFStake(_fStake);
-        fusdVault = VaultAPI(_fusdVault);
+        fusdVault = IVault(_fusdVault);
         uni = Uni(_uni);
         fUSD = _fUSD;
 
@@ -52,7 +53,7 @@ contract Strategy is BaseStrategy {
     }
 
     function name() external view override returns (string memory) {
-        return "StrategyWFTM";
+        return "StrategyWftmFusd";
     }
 
     function estimatedTotalAssets() public view override returns (uint256) {
@@ -81,15 +82,44 @@ contract Strategy is BaseStrategy {
 
         uint256 balanceOfWantBefore = balanceOfWant();
 
-        // Claim profit only when available
-        // uint256 ethProfit = ethFutureProfit();
-        // if (ethProfit > 0) {
-        //     IHegicStaking(hegicStaking).claimProfit();
-        //     _swap(address(this).balance);
-        // }
+        claimWftmProfit();
+        claimFusdProfit();
 
-        // Final profit is want generated in the swap if ethProfit > 0
         _profit = balanceOfWant().sub(balanceOfWantBefore);
+    }
+
+    function claimWftmProfit() internal {
+        // Get profit from wFTM staking contract
+        // TODO: Check the diff between rewardStash and rewardEarned
+        // I am still a bit confused
+        if (fStake.rewardStash(address(this)) > 0) {
+            fStake.mustRewardClaim();
+        }
+    }
+
+    event ClaimFusdProfit(
+        uint256 _valueToWithdraw,
+        uint256 wAmount,
+        uint256 fusdBalance
+    );
+
+    function claimFusdProfit() internal {
+        // Still have more debt than profit, wait
+        if (balanceOfDebt() >= balanceOfFusdInVault()) {
+            return;
+        }
+
+        // Withdraw the diff and sell fUSD for want
+        uint256 _valueToWithdraw = balanceOfFusdInVault().sub(balanceOfDebt());
+        uint256 _sharesToWithdraw =
+            _valueToWithdraw.mul(1e18).div(fusdVault.pricePerShare());
+        fusdVault.withdraw(_sharesToWithdraw);
+        emit ClaimFusdProfit(
+            _valueToWithdraw,
+            _sharesToWithdraw,
+            balanceOfFusd()
+        );
+        buyWantWithFusd(balanceOfFusd());
     }
 
     function adjustPosition(uint256 _debtOutstanding) internal override {
@@ -102,15 +132,17 @@ contract Strategy is BaseStrategy {
             return;
         }
 
+        // If there is want available increase the position, it might not
+        // mint more fusd but it might add more collateral
+        uint256 _wantAvailable = balanceOfWant().sub(_debtOutstanding);
+        if (_wantAvailable > 0) {
+            increasePosition(_wantAvailable);
+        }
+
         // we might need to reduce our investments
         // Usually because of a price change
         if (getCurrentRatio() < getTargetRatio()) {
             reducePosition();
-        }
-
-        uint256 _wantAvailable = balanceOfWant().sub(_debtOutstanding);
-        if (_wantAvailable > 0) {
-            increasePosition(_wantAvailable);
         }
     }
 
@@ -143,13 +175,19 @@ contract Strategy is BaseStrategy {
         override
         returns (address[] memory)
     {
-        address[] memory protected = new address[](1);
+        address[] memory protected = new address[](2);
+        // TODO add vault tokens
         protected[0] = fUSD;
+        protected[1] = address(fusdVault);
         return protected;
     }
 
+    event ReducePosition();
+
     function reducePosition() internal {
-        uint256 _target = targetFusdDebt();
+        emit ReducePosition();
+
+        uint256 _target = getTargetFusdDebt();
         uint256 _actual = balanceOfDebt();
         uint256 _toPayback = _actual.sub(_target);
 
@@ -162,17 +200,20 @@ contract Strategy is BaseStrategy {
         fMint.mustRepay(address(fUSD), Math.min(balanceOfFusd(), _toPayback));
     }
 
+    event Minting(uint256 amount);
+
     function increasePosition(uint256 _amount) internal {
         // deposit collateral and then decide if we should mint fusd
         fMint.mustDeposit(address(want), _amount);
 
         uint256 _toMint = getAmountToMint();
+        emit Minting(_toMint);
         if (_toMint == 0) {
             return;
         }
 
         fMint.mustMint(address(fUSD), _toMint);
-        // TODO deposit fUSD into fusdVault
+        fusdVault.deposit();
     }
 
     function buyWantWithFusd(uint256 _amount) internal {
@@ -199,28 +240,32 @@ contract Strategy is BaseStrategy {
         uni.swapExactTokensForTokens(_amount, 0, path, address(this), now);
     }
 
+    // TODO Make it a view
     function getAmountToMint() public view returns (uint256) {
         if (getCurrentRatio() <= getTargetRatio()) {
             return 0;
         }
 
-        uint256 _targetDebt = targetFusdDebt();
+        uint256 _targetDebt = getTargetFusdDebt();
         uint256 _debt = balanceOfDebt();
         uint256 _toMint = _targetDebt.sub(_debt);
+        uint256 _mintFee =
+            _toMint.mul(fMint.fMintFee4dec()).div(RATIO_DECIMALS);
+        uint256 _finalMintAmount = _toMint.sub(_mintFee);
 
-        if (_toMint > MIN_MINT) {
-            return _toMint;
+        if (_finalMintAmount > MIN_MINT) {
+            return _finalMintAmount;
         } else {
             return 0;
         }
     }
 
-    function targetFusdDebt() public view returns (uint256) {
+    function getTargetFusdDebt() public view returns (uint256) {
         // target fusd debt
         // (wftm_in_collateral * wftm_price) / (target_ratio / 100)
         uint256 collateral =
             balanceOfCollateral().mul(fMint.getPrice(address(want)));
-        return collateral.div(getTargetRatio().div(100));
+        return collateral.div(getTargetRatio().mul(1e18).div(RATIO_DECIMALS));
     }
 
     function getCurrentRatio() public view returns (uint256) {
@@ -234,12 +279,15 @@ contract Strategy is BaseStrategy {
 
         uint256 collateral =
             balanceOfCollateral().mul(fMint.getPrice(address(want)));
-        return uint256(100).mul(collateral).div(debt);
+        return uint256(RATIO_DECIMALS).mul(collateral).div(debt).div(1e18);
     }
 
     function getTargetRatio() public view returns (uint256) {
         // We do 10% above the eligibility for reward ratio
-        return fMint.getRewardEligibilityRatio4dec().mul(1100).div(BASE);
+        return
+            fMint.getRewardEligibilityRatio4dec().mul(11000).div(
+                RATIO_DECIMALS
+            );
     }
 
     function balanceOfWant() public view returns (uint256) {
@@ -257,6 +305,14 @@ contract Strategy is BaseStrategy {
 
     function balanceOfDebt() public view returns (uint256) {
         return fMint.debtValueOf(address(this), fUSD, 0);
+    }
+
+    function balanceOfFusdInVault() public view returns (uint256) {
+        return
+            fusdVault
+                .balanceOf(address(this))
+                .mul(fusdVault.pricePerShare())
+                .div(1e18);
     }
 
     function wantFutureProfit() public view returns (uint256) {
