@@ -24,6 +24,8 @@ interface IFMint {
         view
         returns (IFantomDeFiTokenStorage);
 
+    function getCollateralLowestDebtRatio4dec() external view returns (uint256);
+
     function getRewardEligibilityRatio4dec() external view returns (uint256);
 
     function fMintFee4dec() external view returns (uint256);
@@ -32,7 +34,9 @@ interface IFMint {
 
     function mustWithdraw(address _token, uint256 _amount) external;
 
+    function mustWithdrawMax(address _token, uint256 _ratio) external;
+
     function mustMint(address _token, uint256 _amount) external;
 
-    function mustRepay(address _token, uint256 _amount) external;
+    function mustRepayMax(address _token) external;
 }

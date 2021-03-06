@@ -47,9 +47,14 @@ contract Strategy is BaseStrategy {
         uni = Uni(_uni);
         fUSD = _fUSD;
 
+        // for deposit
         IERC20(want).safeApprove(address(fMint), uint256(-1));
-        IERC20(fUSD).safeApprove(address(uni), uint256(-1));
+        // for paying back debt
+        IERC20(fUSD).safeApprove(address(fMint), uint256(-1));
+        // To deposit fUSD in the fusd vault
         IERC20(fUSD).safeApprove(address(fusdVault), uint256(-1));
+        // To exchange fUSD for wFTM
+        IERC20(fUSD).safeApprove(address(uni), uint256(-1));
     }
 
     function name() external view override returns (string memory) {
@@ -58,6 +63,7 @@ contract Strategy is BaseStrategy {
 
     function estimatedTotalAssets() public view override returns (uint256) {
         // Want + want deposited as collat + reward generated - debt
+        // I am not taking into account possible earnings from the fUSD vault
         return
             balanceOfWant()
                 .add(balanceOfCollateral())
@@ -81,27 +87,18 @@ contract Strategy is BaseStrategy {
         }
 
         uint256 balanceOfWantBefore = balanceOfWant();
-
         claimWftmProfit();
         claimFusdProfit();
-
         _profit = balanceOfWant().sub(balanceOfWantBefore);
     }
 
     function claimWftmProfit() internal {
         // Get profit from wFTM staking contract
         // TODO: Check the diff between rewardStash and rewardEarned
-        // I am still a bit confused
         if (fStake.rewardStash(address(this)) > 0) {
             fStake.mustRewardClaim();
         }
     }
-
-    event ClaimFusdProfit(
-        uint256 _valueToWithdraw,
-        uint256 wAmount,
-        uint256 fusdBalance
-    );
 
     function claimFusdProfit() internal {
         // Still have more debt than profit, wait
@@ -111,15 +108,22 @@ contract Strategy is BaseStrategy {
 
         // Withdraw the diff and sell fUSD for want
         uint256 _valueToWithdraw = balanceOfFusdInVault().sub(balanceOfDebt());
-        uint256 _sharesToWithdraw =
-            _valueToWithdraw.mul(1e18).div(fusdVault.pricePerShare());
-        fusdVault.withdraw(_sharesToWithdraw);
-        emit ClaimFusdProfit(
-            _valueToWithdraw,
-            _sharesToWithdraw,
-            balanceOfFusd()
-        );
+        withdrawFromFusdVault(_valueToWithdraw);
         buyWantWithFusd(balanceOfFusd());
+    }
+
+    function withdrawFromFusdVault(uint256 _fusd_amount) internal {
+        // Don't leave less than MIN_MINT fUSD in the vault
+        if (
+            _fusd_amount > balanceOfFusdInVault() ||
+            balanceOfFusdInVault().sub(_fusd_amount) < MIN_MINT
+        ) {
+            fusdVault.withdraw();
+        } else {
+            uint256 _sharesToWithdraw =
+                _fusd_amount.mul(1e18).div(fusdVault.pricePerShare());
+            fusdVault.withdraw(_sharesToWithdraw);
+        }
     }
 
     function adjustPosition(uint256 _debtOutstanding) internal override {
@@ -142,7 +146,7 @@ contract Strategy is BaseStrategy {
         // we might need to reduce our investments
         // Usually because of a price change
         if (getCurrentRatio() < getTargetRatio()) {
-            reducePosition();
+            reduceDebt();
         }
     }
 
@@ -152,8 +156,7 @@ contract Strategy is BaseStrategy {
         returns (uint256 _liquidatedAmount, uint256 _loss)
     {
         if (balanceOfWant() < _amountNeeded) {
-            // TODO: figure this out
-            reducePosition();
+            reduceCollateral(_amountNeeded.sub(balanceOfWant()));
         }
 
         uint256 totalAssets = balanceOfWant();
@@ -176,38 +179,76 @@ contract Strategy is BaseStrategy {
         returns (address[] memory)
     {
         address[] memory protected = new address[](2);
-        // TODO add vault tokens
         protected[0] = fUSD;
         protected[1] = address(fusdVault);
         return protected;
     }
 
-    event ReducePosition();
+    event Step(uint256 value);
 
-    function reducePosition() internal {
-        emit ReducePosition();
+    function reduceCollateral(uint256 _amount) internal {
+        require(balanceOfCollateral() >= _amount, "Not enough collateral");
 
-        uint256 _target = getTargetFusdDebt();
-        uint256 _actual = balanceOfDebt();
-        uint256 _toPayback = _actual.sub(_target);
+        uint256 _targetCollateral = balanceOfCollateral().sub(_amount);
+        uint256 _targetDebt = getTargetFusdDebt(_targetCollateral);
 
-        // TODO: get back from fusdVault
-        if (balanceOfFusd() < _toPayback) {
-            // TODO: This means we don't have enough fusd to payback
-            // we will need to withdraw and sell wftm
+        // if we would endup with a small amount of debt, let's get rid of all of it.
+        if (_targetDebt < MIN_MINT) {
+            _targetDebt = 0;
         }
 
-        fMint.mustRepay(address(fUSD), Math.min(balanceOfFusd(), _toPayback));
+        reduceDebt(_targetDebt);
+
+        // Since we have a mint fee, we might have never made enough interest
+        // to pay back, at this point we would need to sell wFTM for fUSD to
+        // take out the collat.
+        if (_targetDebt == 0 && balanceOfDebt() > 0) {
+            emit Step(balanceOfFusd());
+            emit Step(balanceOfWant());
+            // Withdraw max possible after reducing debt
+            fMint.mustWithdrawMax(
+                address(want),
+                fMint.getCollateralLowestDebtRatio4dec()
+            );
+            emit Step(balanceOfWant());
+            buyFusdWithWant(balanceOfDebt());
+            emit Step(balanceOfFusd());
+            reduceDebt(_targetDebt);
+        }
+
+        if (_targetDebt == 0) {
+            // Let's withdraw all
+            fMint.mustWithdrawMax(
+                address(want),
+                fMint.getCollateralLowestDebtRatio4dec()
+            );
+        } else {
+            fMint.mustWithdraw(address(want), _amount);
+        }
     }
 
-    event Minting(uint256 amount);
+    function reduceDebt() internal {
+        reduceDebt(getTargetFusdDebt());
+    }
+
+    function reduceDebt(uint256 _target) internal {
+        uint256 _actual = balanceOfDebt();
+
+        // Debt is already below target, nothing to do
+        if (_actual < _target) {
+            return;
+        }
+
+        uint256 _toPayback = _actual.sub(_target);
+        withdrawFromFusdVault(_toPayback);
+        fMint.mustRepayMax(address(fUSD));
+    }
 
     function increasePosition(uint256 _amount) internal {
         // deposit collateral and then decide if we should mint fusd
         fMint.mustDeposit(address(want), _amount);
 
         uint256 _toMint = getAmountToMint();
-        emit Minting(_toMint);
         if (_toMint == 0) {
             return;
         }
@@ -237,10 +278,9 @@ contract Strategy is BaseStrategy {
         path[0] = address(want);
         path[1] = address(fUSD);
 
-        uni.swapExactTokensForTokens(_amount, 0, path, address(this), now);
+        uni.swapTokensForExactTokens(_amount, 0, path, address(this), now);
     }
 
-    // TODO Make it a view
     function getAmountToMint() public view returns (uint256) {
         if (getCurrentRatio() <= getTargetRatio()) {
             return 0;
@@ -261,10 +301,17 @@ contract Strategy is BaseStrategy {
     }
 
     function getTargetFusdDebt() public view returns (uint256) {
+        return getTargetFusdDebt(balanceOfCollateral());
+    }
+
+    function getTargetFusdDebt(uint256 _collateral)
+        public
+        view
+        returns (uint256)
+    {
         // target fusd debt
         // (wftm_in_collateral * wftm_price) / (target_ratio / 100)
-        uint256 collateral =
-            balanceOfCollateral().mul(fMint.getPrice(address(want)));
+        uint256 collateral = _collateral.mul(fMint.getPrice(address(want)));
         return collateral.div(getTargetRatio().mul(1e18).div(RATIO_DECIMALS));
     }
 

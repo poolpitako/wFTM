@@ -8,5 +8,7 @@ interface IVault is IERC20 {
 
     function pricePerShare() external view returns (uint256);
 
+    function withdraw() external;
+
     function withdraw(uint256 amount) external;
 }

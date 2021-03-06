@@ -30,14 +30,15 @@ def test_operation(
     chain.mine(1)
 
     # Donate some fUSD to the fusdVault to mock earnings
-    fUSD.transfer(fusdVault, Wei("50 ether"), {"from": fUSD_whale})
+    fUSD.transfer(fusdVault, Wei("10 ether"), {"from": fUSD_whale})
 
     # Run Harvest
-    tx = strategy.harvest({"from": gov})
+    strategy.harvest({"from": gov})
     chain.sleep(604800)
     chain.mine(1)
 
     vault.withdraw({"from": alice})
+
     assert wFTM.balanceOf(alice) > Wei("1000 ether")
     assert strategy.balanceOfCollateral() == 0
     assert strategy.balanceOfDebt() == 0
