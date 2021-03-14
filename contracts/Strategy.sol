@@ -257,8 +257,10 @@ contract Strategy is BaseStrategy {
         }
 
         // We should only mint what we can deposit
-        uint256 available = fusdVault.availableDepositLimit();
-        fMint.mustMint(address(fUSD), Math.min(_toMint, available));
+        // Because we are not considering the minting fee, we will
+        // leave some space
+        uint256 _availableLimit = fusdVault.availableDepositLimit();
+        fMint.mustMint(address(fUSD), Math.min(_toMint, _availableLimit));
         fusdVault.deposit();
     }
 
@@ -301,7 +303,7 @@ contract Strategy is BaseStrategy {
         uint256 _debt = balanceOfDebt();
         uint256 _toMint = _targetDebt.sub(_debt);
         uint256 _mintFee =
-            _toMint.mul(fMint.fMintFee4dec()).div(RATIO_DECIMALS);
+            _toMint.mul(fMint.getFMintFee4dec()).div(RATIO_DECIMALS);
         uint256 _finalMintAmount = _toMint.sub(_mintFee);
 
         if (_finalMintAmount > MIN_MINT) {

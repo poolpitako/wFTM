@@ -9,6 +9,5 @@ def test_revoke(wFTM, wFTM_whale, vault, strategy, gov, fusdVault, fMint):
     strategy.harvest({"from": gov})
 
     vault.revokeStrategy(strategy, {"from": gov})
-    assert 1 == 2
     t = strategy.harvest({"from": gov})
     assert wFTM.balanceOf(vault) == amount
