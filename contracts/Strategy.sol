@@ -55,6 +55,8 @@ contract Strategy is BaseStrategy {
         IERC20(fUSD).safeApprove(address(fusdVault), uint256(-1));
         // To exchange fUSD for wFTM
         IERC20(fUSD).safeApprove(address(uni), uint256(-1));
+        // To exchange wFTM for fUSD
+        IERC20(want).safeApprove(address(uni), uint256(-1));
     }
 
     function name() external view override returns (string memory) {
@@ -126,6 +128,10 @@ contract Strategy is BaseStrategy {
         }
     }
 
+    function tendTrigger(uint256 callCost) public view override returns (bool) {
+        return getCurrentRatio() < getTargetRatio();
+    }
+
     function adjustPosition(uint256 _debtOutstanding) internal override {
         if (emergencyExit) {
             return;
@@ -184,7 +190,8 @@ contract Strategy is BaseStrategy {
         return protected;
     }
 
-    event Step(uint256 value);
+    event BalanceOfWant(uint256 amount);
+    event BalanceOfDebt(uint256 amount);
 
     function reduceCollateral(uint256 _amount) internal {
         require(balanceOfCollateral() >= _amount, "Not enough collateral");
@@ -203,17 +210,13 @@ contract Strategy is BaseStrategy {
         // to pay back, at this point we would need to sell wFTM for fUSD to
         // take out the collat.
         if (_targetDebt == 0 && balanceOfDebt() > 0) {
-            emit Step(balanceOfFusd());
-            emit Step(balanceOfWant());
             // Withdraw max possible after reducing debt
             fMint.mustWithdrawMax(
                 address(want),
                 fMint.getCollateralLowestDebtRatio4dec()
             );
-            emit Step(balanceOfWant());
             buyFusdWithWant(balanceOfDebt());
-            emit Step(balanceOfFusd());
-            reduceDebt(_targetDebt);
+            fMint.mustRepayMax(address(fUSD));
         }
 
         if (_targetDebt == 0) {
@@ -253,7 +256,9 @@ contract Strategy is BaseStrategy {
             return;
         }
 
-        fMint.mustMint(address(fUSD), _toMint);
+        // We should only mint what we can deposit
+        uint256 available = fusdVault.availableDepositLimit();
+        fMint.mustMint(address(fUSD), Math.min(_toMint, available));
         fusdVault.deposit();
     }
 
@@ -278,7 +283,13 @@ contract Strategy is BaseStrategy {
         path[0] = address(want);
         path[1] = address(fUSD);
 
-        uni.swapTokensForExactTokens(_amount, 0, path, address(this), now);
+        uni.swapTokensForExactTokens(
+            _amount,
+            uint256(-1),
+            path,
+            address(this),
+            now
+        );
     }
 
     function getAmountToMint() public view returns (uint256) {

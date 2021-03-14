@@ -11,4 +11,6 @@ interface IVault is IERC20 {
     function withdraw() external;
 
     function withdraw(uint256 amount) external;
+
+    function availableDepositLimit() external view returns (uint256);
 }
