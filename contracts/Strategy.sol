@@ -82,16 +82,23 @@ contract Strategy is BaseStrategy {
             uint256 _debtPayment
         )
     {
-        if (_debtOutstanding > 0) {
-            uint256 _amountFreed = 0;
-            (_amountFreed, _loss) = liquidatePosition(_debtOutstanding);
-            _debtPayment = Math.min(_amountFreed, _debtOutstanding);
-        }
-
+        // Calculate profit from claiming wftm and profit from the fUSD vault
         uint256 balanceOfWantBefore = balanceOfWant();
         claimWftmProfit();
         claimFusdProfit();
         _profit = balanceOfWant().sub(balanceOfWantBefore);
+
+        if (_debtOutstanding > 0) {
+            uint256 _amountFreed = 0;
+            (_amountFreed, _loss) = liquidatePosition(_debtOutstanding);
+            _debtPayment = Math.min(_amountFreed, _debtOutstanding);
+
+            // If we have a loss that means that profit wasn't enough to
+            // cover for it, wipe it out.
+            if (_loss > 0) {
+                _profit = 0;
+            }
+        }
     }
 
     function claimWftmProfit() internal {
@@ -175,7 +182,7 @@ contract Strategy is BaseStrategy {
     }
 
     function prepareMigration(address _newStrategy) internal override {
-        // TODO
+        prepareReturn(vault.strategies(address(this)).totalDebt);
     }
 
     function protectedTokens()
@@ -189,9 +196,6 @@ contract Strategy is BaseStrategy {
         protected[1] = address(fusdVault);
         return protected;
     }
-
-    event BalanceOfWant(uint256 amount);
-    event BalanceOfDebt(uint256 amount);
 
     function reduceCollateral(uint256 _amount) internal {
         require(balanceOfCollateral() >= _amount, "Not enough collateral");
