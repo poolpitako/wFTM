@@ -23,5 +23,5 @@ def test_increasing_ratio(wFTM, wFTM_whale, vault, strategy, gov, fusdVault, fMi
     # Return everything
     vault.updateStrategyDebtRatio(strategy, 0, {"from": gov})
     strategy.harvest({"from": gov})
-    assert strategy.balanceOfCollateral() <= Wei("0.0001 ether")
+    assert strategy.balanceOfCollateral() == 0
     assert vault.strategies(strategy).dict()["totalDebt"] == 0
