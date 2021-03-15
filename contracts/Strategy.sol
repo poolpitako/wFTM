@@ -262,9 +262,10 @@ contract Strategy is BaseStrategy {
         uint256 fee4dec = fMint.getFMintFee4dec();
         uint256 decimals = RATIO_DECIMALS;
         uint256 _amountToMint =
-            _availableLimit.mul(RATIO_DECIMALS).div(
-                RATIO_DECIMALS.sub(fee4dec)
-            );
+            _availableLimit
+                .mul(RATIO_DECIMALS)
+                .div(RATIO_DECIMALS.sub(fee4dec))
+                .add(1);
         fMint.mustMint(address(fUSD), Math.min(_toMint, _amountToMint));
         fusdVault.deposit();
     }
