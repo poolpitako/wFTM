@@ -260,7 +260,6 @@ contract Strategy is BaseStrategy {
         // We scale amountToMint up to account for mint fee
         uint256 _availableLimit = fusdVault.availableDepositLimit();
         uint256 fee4dec = fMint.getFMintFee4dec();
-        uint256 decimals = RATIO_DECIMALS;
         uint256 _amountToMint =
             _availableLimit
                 .mul(RATIO_DECIMALS)
