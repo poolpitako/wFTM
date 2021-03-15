@@ -32,5 +32,5 @@ def test_migration(
     new_strategy.harvest({"from": strategist})
 
     assert strategy.balanceOfFusdInVault() == 0
-    assert strategy.balanceOfCollateral() < Wei("0.001 ether")
+    assert strategy.balanceOfCollateral() == 0
     assert new_strategy.balanceOfFusdInVault() > 0
