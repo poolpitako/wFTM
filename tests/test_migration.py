@@ -1,16 +1,21 @@
-# TODO: Add tests that show proper migration of the strategy to a newer one
-#       Use another copy of the strategy to simulate the migration
-#       Show that nothing is lost!
+from brownie import Wei
 
 
-def test_migration(token, vault, strategy, amount, Strategy, strategist, gov):
+def test_migration(wFTM, wFTM_whale, alice, vault, strategy, fusdVault, Strategy, strategist, gov, fMint, fStaking, fUSD, uni):
     # Deposit to the vault and harvest
-    token.approve(vault.address, amount, {"from": gov})
-    vault.deposit(amount, {"from": gov})
-    strategy.harvest()
-    assert token.balanceOf(strategy.address) == amount
+    wFTM.transfer(alice, Wei("1000 ether"), {"from": wFTM_whale})
+    wFTM.approve(vault, 2 ** 256 - 1, {"from": alice})
+    vault.deposit({"from": alice})
+
+    prevStratVaultBalance = fusdVault.balanceOf(strategy)
+    strategy.harvest({"from": gov})
+
+    assert fusdVault.balanceOf(strategy) > 0
+    stratVaultBalance = fusdVault.balanceOf(strategy)
+    assert stratVaultBalance > prevStratVaultBalance
 
     # migrate to a new strategy
-    new_strategy = strategist.deploy(Strategy, vault)
-    strategy.migrate(new_strategy.address, {"from": gov})
-    assert token.balanceOf(new_strategy.address) == amount
+    new_strategy = strategist.deploy(Strategy, vault, fMint, fStaking, fUSD, fusdVault, uni)
+    vault.migrateStrategy(strategy, new_strategy, {"from": gov})
+    assert fusdVault.balanceOf(strategy) == 0
+    assert fusdVault.balanceOf(new_strategy) == stratVaultBalance
