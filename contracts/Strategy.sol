@@ -73,6 +73,8 @@ contract Strategy is BaseStrategy {
                 .sub(debtInWant());
     }
 
+    event LiquidatePosition(uint256 freed, uint256 loss, uint256 dp);
+
     function prepareReturn(uint256 _debtOutstanding)
         internal
         override
@@ -92,7 +94,7 @@ contract Strategy is BaseStrategy {
             uint256 _amountFreed = 0;
             (_amountFreed, _loss) = liquidatePosition(_debtOutstanding);
             _debtPayment = Math.min(_amountFreed, _debtOutstanding);
-
+            emit LiquidatePosition(_amountFreed, _loss, _debtPayment);
             // If we have a loss that means that profit wasn't enough to
             // cover for it, wipe it out.
             if (_loss > 0) {
@@ -182,7 +184,7 @@ contract Strategy is BaseStrategy {
     }
 
     function prepareMigration(address _newStrategy) internal override {
-        prepareReturn(vault.strategies(address(this)).totalDebt);
+        prepareReturn(vault.strategies(_newStrategy).totalDebt);
     }
 
     function protectedTokens()
