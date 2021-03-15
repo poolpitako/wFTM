@@ -24,6 +24,8 @@ interface IFMint {
         view
         returns (IFantomDeFiTokenStorage);
 
+    function getDebtPool() external view returns (IFantomDeFiTokenStorage);
+
     function getCollateralLowestDebtRatio4dec() external view returns (uint256);
 
     function getRewardEligibilityRatio4dec() external view returns (uint256);

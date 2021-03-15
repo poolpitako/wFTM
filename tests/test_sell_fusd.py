@@ -2,7 +2,7 @@ import brownie
 from brownie import Contract, Wei
 
 
-def test_happy_path(
+def test_sell_fusd(
     chain,
     gov,
     vault,
@@ -39,8 +39,8 @@ def test_happy_path(
     chain.sleep(604800)  # 1 week
     chain.mine(1)
 
-    # Withdraw users funds
-    vault.withdraw({"from": alice})
+    # Withdraw users funds with max slippage
+    vault.withdraw(vault.balanceOf(alice), alice, 10_000,  {"from": alice})
 
     assert wFTM.balanceOf(alice) > Wei("1000 ether")
     assert strategy.balanceOfFusd() == 0

@@ -208,6 +208,7 @@ contract Strategy is BaseStrategy {
             _targetDebt = 0;
         }
 
+        // Reduce the debt to the target
         reduceDebt(_targetDebt);
 
         if (_targetDebt == 0) {
@@ -222,7 +223,6 @@ contract Strategy is BaseStrategy {
                 );
                 // Buy some fusd with want
                 buyFusdWithWant(balanceOfDebt());
-
                 // Repay all
                 fMint.mustRepayMax(address(fUSD));
             }
@@ -239,11 +239,7 @@ contract Strategy is BaseStrategy {
         reduceDebt(getTargetFusdDebt());
     }
 
-    event FusdBalance(uint256 balance);
-    event TargetValue(uint256 value);
-
     function reduceDebt(uint256 _target) internal {
-        emit TargetValue(_target);
         uint256 _actual = balanceOfDebt();
 
         // Debt is already below target, nothing to do
@@ -253,9 +249,7 @@ contract Strategy is BaseStrategy {
 
         uint256 _toPayback = _actual.sub(_target);
         withdrawFromFusdVault(_toPayback);
-        emit FusdBalance(balanceOfFusd());
         fMint.mustRepayMax(address(fUSD));
-        emit FusdBalance(balanceOfFusd());
     }
 
     function increasePosition(uint256 _amount) internal {
@@ -321,7 +315,7 @@ contract Strategy is BaseStrategy {
         uint256 _debt = balanceOfDebt();
         uint256 _toMint = _targetDebt.sub(_debt);
 
-        if (_finalMintAmount > MIN_MINT) {
+        if (_toMint > MIN_MINT) {
             return _toMint;
         } else {
             return 0;
@@ -379,7 +373,7 @@ contract Strategy is BaseStrategy {
     }
 
     function balanceOfDebt() public view returns (uint256) {
-        return fMint.debtValueOf(address(this), fUSD, 0);
+        return fMint.getDebtPool().balanceOf(address(this), address(fUSD));
     }
 
     function balanceOfFusdInVault() public view returns (uint256) {
