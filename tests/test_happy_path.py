@@ -26,7 +26,7 @@ def test_operation(
     assert strategy.getCurrentRatio() >= strategy.getTargetRatio()
     assert fusdVault.balanceOf(strategy) > 0
 
-    chain.sleep(604800)
+    chain.sleep(604800) # 1 week
     chain.mine(1)
 
     # Donate some fUSD to the fusdVault to mock earnings
@@ -34,7 +34,7 @@ def test_operation(
 
     # Run Harvest
     strategy.harvest({"from": gov})
-    chain.sleep(604800)
+    chain.sleep(604800) # 1 week
     chain.mine(1)
 
     vault.withdraw({"from": alice})

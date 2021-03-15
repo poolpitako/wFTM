@@ -23,7 +23,7 @@ contract Strategy is BaseStrategy {
     using Address for address;
     using SafeMath for uint256;
 
-    uint256 public RATIO_DECIMALS = 10000;
+    uint256 public constant RATIO_DECIMALS = 10000;
     uint256 public MAX_RATIO = uint256(-1);
     uint256 public MIN_MINT = 50 * 1e18;
 
@@ -48,15 +48,15 @@ contract Strategy is BaseStrategy {
         fUSD = _fUSD;
 
         // for deposit
-        IERC20(want).safeApprove(address(fMint), uint256(-1));
+        IERC20(want).safeApprove(address(fMint), type(uint256).max);
         // for paying back debt
-        IERC20(fUSD).safeApprove(address(fMint), uint256(-1));
+        IERC20(fUSD).safeApprove(address(fMint), type(uint256).max);
         // To deposit fUSD in the fusd vault
-        IERC20(fUSD).safeApprove(address(fusdVault), uint256(-1));
+        IERC20(fUSD).safeApprove(address(fusdVault), type(uint256).max);
         // To exchange fUSD for wFTM
-        IERC20(fUSD).safeApprove(address(uni), uint256(-1));
+        IERC20(fUSD).safeApprove(address(uni), type(uint256).max);
         // To exchange wFTM for fUSD
-        IERC20(want).safeApprove(address(uni), uint256(-1));
+        IERC20(want).safeApprove(address(uni), type(uint256).max);
     }
 
     function name() external view override returns (string memory) {
@@ -263,10 +263,17 @@ contract Strategy is BaseStrategy {
         }
 
         // We should only mint what we can deposit
-        // Because we are not considering the minting fee, we will
-        // leave some space
-        uint256 _availableLimit = fusdVault.availableDepositLimit();
-        fMint.mustMint(address(fUSD), Math.min(_toMint, _availableLimit));
+        // We scale amountToMint up to account for mint fee
+        uint256 maxDeposit = fusdVault.availableDepositLimit();
+        uint256 fee4dec = fMint.getFMintFee4dec();
+        // amountToMint is greater than maxDeposit because there is a minting fee (which is taken from the minted amount)
+        // ex. user mints 100 but receives 99.5 (0.5% minting fee)
+        uint256 _amountToMint =
+            maxDeposit
+                .mul(RATIO_DECIMALS)
+                .div(RATIO_DECIMALS.sub(fee4dec)) // 100% - fee%
+                .add(1);
+        fMint.mustMint(address(fUSD), Math.min(_toMint, _amountToMint));
         fusdVault.deposit();
     }
 

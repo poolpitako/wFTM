@@ -14,8 +14,5 @@ def test_revoke(wFTM, wFTM_whale, vault, strategy, gov, fusdVault, fMint):
     # Invest
     strategy.harvest({"from": gov})
 
-    # We are not taking into account the minting fee so there will be some
-    # space left in the vault
-    assert fusdVault.availableDepositLimit() <= Wei("0.51 ether")
+    assert fusdVault.availableDepositLimit() == 0
     assert strategy.balanceOfFusdInVault() > 0
-    assert strategy.balanceOfDebt() / 1e18 == Wei("100 ether") / 1e18

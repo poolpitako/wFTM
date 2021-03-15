@@ -69,6 +69,10 @@ def wFTM():
 
 
 @pytest.fixture
+def token(wFTM):
+    yield wFTM
+
+@pytest.fixture
 def wFTM_whale(accounts):
     yield accounts.at("0xBB634cafEf389cDD03bB276c82738726079FcF2E", force=True)
 
