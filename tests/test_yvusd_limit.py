@@ -16,4 +16,3 @@ def test_revoke(wFTM, wFTM_whale, vault, strategy, gov, fusdVault, fMint):
 
     assert fusdVault.availableDepositLimit() == 0
     assert strategy.balanceOfFusdInVault() > 0
-    assert strategy.balanceOfDebt() * (10_000 - fMint.getFMintFee4dec()) / 10_000 == fusdVault.depositLimit()

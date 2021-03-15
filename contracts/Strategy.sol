@@ -258,12 +258,14 @@ contract Strategy is BaseStrategy {
 
         // We should only mint what we can deposit
         // We scale amountToMint up to account for mint fee
-        uint256 _availableLimit = fusdVault.availableDepositLimit();
+        uint256 maxDeposit = fusdVault.availableDepositLimit();
         uint256 fee4dec = fMint.getFMintFee4dec();
+        // amountToMint is greater than maxDeposit because there is a minting fee (which is taken from the minted amount)
+        // ex. user mints 100 but receives 99.5 (0.5% minting fee)
         uint256 _amountToMint =
-            _availableLimit
+            maxDeposit
                 .mul(RATIO_DECIMALS)
-                .div(RATIO_DECIMALS.sub(fee4dec))
+                .div(RATIO_DECIMALS.sub(fee4dec)) // 100% - fee%
                 .add(1);
         fMint.mustMint(address(fUSD), Math.min(_toMint, _amountToMint));
         fusdVault.deposit();
