@@ -320,12 +320,9 @@ contract Strategy is BaseStrategy {
         uint256 _targetDebt = getTargetFusdDebt();
         uint256 _debt = balanceOfDebt();
         uint256 _toMint = _targetDebt.sub(_debt);
-        uint256 _mintFee =
-            _toMint.mul(fMint.getFMintFee4dec()).div(RATIO_DECIMALS);
-        uint256 _finalMintAmount = _toMint.sub(_mintFee);
 
         if (_finalMintAmount > MIN_MINT) {
-            return _finalMintAmount;
+            return _toMint;
         } else {
             return 0;
         }
@@ -343,10 +340,7 @@ contract Strategy is BaseStrategy {
         // target fusd debt
         // (wftm_in_collateral * wftm_price) / (target_ratio / 100)
         uint256 collateral = _collateral.mul(fMint.getPrice(address(want)));
-        return
-            collateral.div(getTargetRatio().mul(1e18).div(RATIO_DECIMALS)).add(
-                1
-            );
+        return collateral.div(getTargetRatio().mul(1e18).div(RATIO_DECIMALS));
     }
 
     function getCurrentRatio() public view returns (uint256) {
