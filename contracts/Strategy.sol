@@ -209,26 +209,27 @@ contract Strategy is BaseStrategy {
 
         reduceDebt(_targetDebt);
 
-        // Since we have a mint fee, we might have never made enough interest
-        // to pay back, at this point we would need to sell wFTM for fUSD to
-        // take out the collat.
-        if (_targetDebt == 0 && balanceOfDebt() > 0) {
-            // Withdraw max possible after reducing debt
-            fMint.mustWithdrawMax(
-                address(want),
-                fMint.getCollateralLowestDebtRatio4dec()
-            );
-            buyFusdWithWant(balanceOfDebt());
-            fMint.mustRepayMax(address(fUSD));
-        }
-
         if (_targetDebt == 0) {
-            // Let's withdraw all
-            fMint.mustWithdrawMax(
-                address(want),
-                fMint.getCollateralLowestDebtRatio4dec()
-            );
+            // Since we have a mint fee, we might have never made enough profit
+            // to pay back, at this point we would need to sell wFTM for fUSD to
+            // take out the collat.
+            if (balanceOfDebt() > 0) {
+                // Withdraw as much want as we can
+                fMint.mustWithdrawMax(
+                    address(want),
+                    fMint.getCollateralLowestDebtRatio4dec()
+                );
+                // Buy some fusd with want
+                buyFusdWithWant(balanceOfDebt());
+
+                // Repay all
+                fMint.mustRepayMax(address(fUSD));
+            }
+
+            // Now we can withdraw all
+            fMint.mustWithdraw(address(want), balanceOfCollateral());
         } else {
+            // We are reducing our collateral after reducing debt
             fMint.mustWithdraw(address(want), _amount);
         }
     }
