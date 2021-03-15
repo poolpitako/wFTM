@@ -33,4 +33,5 @@ def test_migration(
 
     assert strategy.balanceOfFusdInVault() == 0
     assert strategy.balanceOfCollateral() == 0
+    assert strategy.balanceOfFusd() == 0
     assert new_strategy.balanceOfFusdInVault() > 0

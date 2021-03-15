@@ -70,6 +70,7 @@ contract Strategy is BaseStrategy {
             balanceOfWant()
                 .add(balanceOfCollateral())
                 .add(wantFutureProfit())
+                .add(balanceOfFusdVaultInWant())
                 .sub(debtInWant());
     }
 
@@ -238,17 +239,23 @@ contract Strategy is BaseStrategy {
         reduceDebt(getTargetFusdDebt());
     }
 
+    event FusdBalance(uint256 balance);
+    event TargetValue(uint256 value);
+
     function reduceDebt(uint256 _target) internal {
+        emit TargetValue(_target);
         uint256 _actual = balanceOfDebt();
 
         // Debt is already below target, nothing to do
-        if (_actual < _target) {
+        if (_actual <= _target) {
             return;
         }
 
         uint256 _toPayback = _actual.sub(_target);
         withdrawFromFusdVault(_toPayback);
+        emit FusdBalance(balanceOfFusd());
         fMint.mustRepayMax(address(fUSD));
+        emit FusdBalance(balanceOfFusd());
     }
 
     function increasePosition(uint256 _amount) internal {
@@ -393,12 +400,21 @@ contract Strategy is BaseStrategy {
         return fStake.rewardStash(address(this));
     }
 
+    function balanceOfFusdVaultInWant() public view returns (uint256) {
+        uint256 _balance = balanceOfFusdInVault();
+        if (_balance == 0) {
+            return 0;
+        }
+
+        return _balance.mul(1e18).div(fMint.getPrice(address(want)));
+    }
+
     function debtInWant() public view returns (uint256) {
         uint256 _debt = balanceOfDebt();
         if (_debt == 0) {
             return 0;
         }
 
-        return _debt.div(fMint.getPrice(address(want))).mul(1e18);
+        return _debt.mul(1e18).div(fMint.getPrice(address(want)));
     }
 }

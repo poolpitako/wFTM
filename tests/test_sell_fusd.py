@@ -42,18 +42,5 @@ def test_happy_path(
     # Withdraw users funds
     vault.withdraw({"from": alice})
 
-    # Withdraw fees from treasury
-    vault.withdraw({"from": rewards})
-
-    # Withdraw fees from strategist
-    vault.transferFrom(
-        strategy, strategist, vault.balanceOf(strategy), {"from": strategist}
-    )
-    vault.withdraw({"from": strategist})
-
     assert wFTM.balanceOf(alice) > Wei("1000 ether")
-    assert strategy.balanceOfCollateral() == 0
-    assert strategy.balanceOfDebt() == 0
     assert strategy.balanceOfFusd() == 0
-    assert strategy.balanceOfFusdInVault() == 0
-    assert fusdVault.totalAssets() == 0

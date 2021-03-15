@@ -50,6 +50,7 @@ def vault(pm, gov, rewards, guardian, management, wFTM):
     vault.setDepositLimit(2 ** 256 - 1, {"from": gov})
     vault.setManagement(management, {"from": gov})
     vault.setManagementFee(0, {"from": gov})
+    vault.setPerformanceFee(0, {"from": gov})
     yield vault
 
 
@@ -59,7 +60,7 @@ def strategy(
 ):
     strategy = strategist.deploy(Strategy, vault, fMint, fStaking, fUSD, fusdVault, uni)
     strategy.setKeeper(keeper)
-    vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
+    vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 0, {"from": gov})
     yield strategy
 
 
