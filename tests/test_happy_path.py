@@ -42,4 +42,6 @@ def test_operation(
     assert wFTM.balanceOf(alice) > Wei("1000 ether")
     assert strategy.balanceOfCollateral() == 0
     assert strategy.balanceOfDebt() == 0
+    assert strategy.balanceOfFusd() == 0
+    assert strategy.balanceOfFusdInVault() == 0
     assert fusdVault.totalAssets() == 0
