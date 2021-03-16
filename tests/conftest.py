@@ -1,6 +1,5 @@
 import pytest
-from brownie import config
-from brownie import Contract
+from brownie import config, Contract, Wei
 
 
 @pytest.fixture
@@ -34,47 +33,83 @@ def keeper(accounts):
 
 
 @pytest.fixture
-def token():
-    token_address = "0x6b175474e89094c44da98b954eedeac495271d0f"  # this should be the address of the ERC-20 used by the strategy/vault (DAI)
-    yield Contract(token_address)
+def alice(accounts):
+    yield accounts[6]
 
 
 @pytest.fixture
-def amount(accounts, token):
-    amount = 10_000 * 10 ** token.decimals()
-    # In order to get some funds for the token you are about to use,
-    # it impersonate an exchange address to use it's funds.
-    reserve = accounts.at("0xd551234ae421e3bcba99a0da6d736074f22192ff", force=True)
-    token.transfer(accounts[0], amount, {"from": reserve})
-    yield amount
+def bob(accounts):
+    yield accounts[7]
 
 
 @pytest.fixture
-def weth():
-    token_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-    yield Contract(token_address)
-
-
-@pytest.fixture
-def weth_amout(gov, weth):
-    weth_amout = 10 ** weth.decimals()
-    gov.transfer(weth, weth_amout)
-    yield weth_amout
-
-
-@pytest.fixture
-def vault(pm, gov, rewards, guardian, management, token):
+def vault(pm, gov, rewards, guardian, management, wFTM):
     Vault = pm(config["dependencies"][0]).Vault
     vault = guardian.deploy(Vault)
-    vault.initialize(token, gov, rewards, "", "", guardian)
+    vault.initialize(wFTM, gov, rewards, "", "", guardian)
     vault.setDepositLimit(2 ** 256 - 1, {"from": gov})
     vault.setManagement(management, {"from": gov})
     yield vault
 
 
 @pytest.fixture
-def strategy(strategist, keeper, vault, Strategy, gov):
-    strategy = strategist.deploy(Strategy, vault)
+def strategy(
+    strategist, keeper, vault, Strategy, gov, fMint, fStaking, fUSD, fusdVault, uni
+):
+    strategy = strategist.deploy(Strategy, vault, fMint, fStaking, fUSD, fusdVault, uni)
     strategy.setKeeper(keeper)
-    vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
+    vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1000, {"from": gov})
     yield strategy
+
+
+@pytest.fixture
+def wFTM():
+    yield Contract("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83")
+
+
+@pytest.fixture
+def token(wFTM):
+    yield wFTM
+
+
+@pytest.fixture
+def wFTM_whale(accounts):
+    yield accounts.at("0xBB634cafEf389cDD03bB276c82738726079FcF2E", force=True)
+
+
+@pytest.fixture
+def fMint():
+    yield Contract("0xBB634cafEf389cDD03bB276c82738726079FcF2E")
+
+
+@pytest.fixture
+def mockMint(gov, MockMint, fMint):
+    yield gov.deploy(MockMint, fMint)
+
+
+@pytest.fixture
+def fStaking():
+    yield Contract("0x073e408E5897b3358edcf130199Cfd895769D3E4")
+
+
+@pytest.fixture
+def fUSD():
+    yield Contract("0xAd84341756Bf337f5a0164515b1f6F993D194E1f")
+
+
+@pytest.fixture
+def fUSD_whale(accounts):
+    yield accounts.at("0x3bfC4807c49250b7D966018EE596fd9D5C677e3D", force=True)
+
+
+@pytest.fixture
+def uni():
+    yield Contract("0x67A937eA41Cd05ec8c832a044afC0100F30Aa4b5")
+
+
+@pytest.fixture
+def fusdVault(accounts):
+    vault = Contract("0x4b2de374d480efa96cb093cefcca23d97903a6ea")
+    fusd_gov = accounts.at(vault.governance(), force=True)
+    vault.setDepositLimit(Wei("1000 ether"), {"from": fusd_gov})
+    yield vault
