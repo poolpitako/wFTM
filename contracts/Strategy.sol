@@ -85,8 +85,10 @@ contract Strategy is BaseStrategy {
     {
         // Calculate profit from claiming wftm and profit from the fUSD vault
         uint256 balanceOfWantBefore = balanceOfWant();
-        claimWftmProfit();
-        claimFusdProfit();
+
+        claimWftmProfit(); // claim WTFM rewards earned
+        claimFusdProfit(); // claim fUSD profits and sell for WTFM
+
         _profit = balanceOfWant().sub(balanceOfWantBefore);
 
         if (_debtOutstanding > 0) {
@@ -103,8 +105,7 @@ contract Strategy is BaseStrategy {
 
     function claimWftmProfit() internal {
         // Get profit from wFTM staking contract
-        // TODO: Check the diff between rewardStash and rewardEarned
-        if (fStake.rewardStash(address(this)) > 0) {
+        if (fStake.rewardEarned(address(this)) > 0) {
             fStake.mustRewardClaim();
         }
     }
@@ -206,32 +207,46 @@ contract Strategy is BaseStrategy {
         // if we would endup with a small amount of debt, let's get rid of all of it.
         if (_targetDebt < MIN_MINT) {
             _targetDebt = 0;
+            _amount = balanceOfCollateral();
         }
 
-        // Reduce the debt to the target
+        // Reduce the debt to the target (withdraw from fUSDVault and repay debt)
         reduceDebt(_targetDebt);
 
-        if (_targetDebt == 0) {
+        if (_targetDebt >= balanceOfDebt()) {
+            // success (default) case:
+            // reduceDebt has successfully reduce debt down to _targetDebt
+            // thus, it can withdraw all want it needs
+            fMint.mustWithdraw(address(want), _amount);
+        } else if (_targetDebt == 0 && balanceOfDebt() > 0) {
+            // special case: vault is winding down this strategy (last withdraw or revoking/migrating strategy)
+            // it needs to repay total debt to be able to withdraw required `want`
+
             // Since we have a mint fee, we might have never made enough profit
             // to pay back, at this point we would need to sell wFTM for fUSD to
             // take out the collat.
-            if (balanceOfDebt() > 0) {
-                // Withdraw as much want as we can
-                fMint.mustWithdrawMax(
-                    address(want),
-                    fMint.getCollateralLowestDebtRatio4dec()
-                );
-                // Buy some fusd with want
-                buyFusdWithWant(balanceOfDebt());
-                // Repay all
-                fMint.mustRepayMax(address(fUSD));
-            }
 
-            // Now we can withdraw all
+            // this will repay full debt an withdraw the whole amount of want deposited
+
+            // Withdraw as much want as we can
+            fMint.mustWithdrawMax(
+                address(want),
+                fMint.getCollateralLowestDebtRatio4dec()
+            );
+
+            // Buy some fusd with want
+            buyFusdWithWant(balanceOfDebt());
+            // Repay all
+            fMint.mustRepayMax(address(fUSD));
+
+            // Withdraw the remaining of the collateral which is < of _amount
             fMint.mustWithdraw(address(want), balanceOfCollateral());
         } else {
-            // We are reducing our collateral after reducing debt
-            fMint.mustWithdraw(address(want), _amount);
+            // this might withdraw more `want` than strictly required
+            // excess want will be reinvested in the next adjustPosition(...)
+            // eg. if fUSD has not been minted and wFTM has gone up in price so collateral is >> getTargetRatio()
+            // in that case we will withdraw more than required (down to getTargetRatio) and excess will be reinvested
+            fMint.mustWithdrawMax(address(want), getTargetRatio());
         }
     }
 
@@ -247,8 +262,12 @@ contract Strategy is BaseStrategy {
             return;
         }
 
+        // take enough fUSD balance to repay required debt
         uint256 _toPayback = _actual.sub(_target);
         withdrawFromFusdVault(_toPayback);
+
+        // repay max debt (mininum value between balanceFUSD and totalDebt)
+        // NOTE: debt may still be != 0 after this even if _target == 0 (if not enough balanceFUSD to repay totalDebt)
         fMint.mustRepayMax(address(fUSD));
     }
 
@@ -264,14 +283,24 @@ contract Strategy is BaseStrategy {
         // We should only mint what we can deposit
         // We scale amountToMint up to account for mint fee
         uint256 maxDeposit = fusdVault.availableDepositLimit();
-        uint256 fee4dec = fMint.getFMintFee4dec();
-        // amountToMint is greater than maxDeposit because there is a minting fee (which is taken from the minted amount)
-        // ex. user mints 100 but receives 99.5 (0.5% minting fee)
-        uint256 _amountToMint =
-            maxDeposit
+        uint256 _amountToMint = _toMint;
+
+        if (maxDeposit < _toMint) {
+            uint256 fee4dec = fMint.getFMintFee4dec();
+            // amountToMint is greater than maxDeposit because there is a minting
+            // fee (which is taken from the minted amount)
+            // ex. user mints 100 but receives 99.5 (0.5% minting fee)
+            _amountToMint = maxDeposit
                 .mul(RATIO_DECIMALS)
                 .div(RATIO_DECIMALS.sub(fee4dec)) // 100% - fee%
                 .add(1);
+        }
+
+        // The amount to be minted needs to be higher than the fee (see fMint.mustMint code)
+        if (_amountToMint <= 1) {
+            return;
+        }
+
         fMint.mustMint(address(fUSD), Math.min(_toMint, _amountToMint));
         fusdVault.deposit();
     }
