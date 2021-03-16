@@ -199,8 +199,7 @@ contract Strategy is BaseStrategy {
     }
 
     function reduceCollateral(uint256 _amount) internal {
-        // if balanceOfCollateral is not enough, we reduce max amount available
-        if (balanceOfCollateral() >= _amount) _amount = balanceOfCollateral();
+        require(balanceOfCollateral() >= _amount, "Not enough collateral");
 
         uint256 _targetCollateral = balanceOfCollateral().sub(_amount);
         uint256 _targetDebt = getTargetFusdDebt(_targetCollateral);
@@ -208,35 +207,45 @@ contract Strategy is BaseStrategy {
         // if we would endup with a small amount of debt, let's get rid of all of it.
         if (_targetDebt < MIN_MINT) {
             _targetDebt = 0;
+            _amount = balanceOfCollateral();
         }
 
         // Reduce the debt to the target (withdraw from fUSDVault and repay debt)
         reduceDebt(_targetDebt);
 
-        if (_targetDebt == 0) {
+        if (_targetDebt >= balanceOfDebt()) {
+            // success (default) case:
+            // reduceDebt has successfully reduce debt down to _targetDebt
+            // thus, it can withdraw all want it needs
+            fMint.mustWithdraw(address(want), _amount);
+        } else if (_targetDebt == 0 && balanceOfDebt() > 0) {
+            // special case: vault is winding down this strategy (last withdraw or revoking/migrating strategy)
+            // it needs to repay total debt to be able to withdraw required `want`
+
             // Since we have a mint fee, we might have never made enough profit
             // to pay back, at this point we would need to sell wFTM for fUSD to
             // take out the collat.
-            if (balanceOfDebt() > 0) {
-                // Withdraw as much want as we can
-                fMint.mustWithdrawMax(
-                    address(want),
-                    fMint.getCollateralLowestDebtRatio4dec()
-                );
-                // Buy some fusd with want
-                buyFusdWithWant(balanceOfDebt());
-                // Repay all
-                fMint.mustRepayMax(address(fUSD));
-            }
 
-            // Now we can withdraw all
-            fMint.mustWithdraw(address(want), balanceOfCollateral());
-        } else if (_targetDebt == balanceOfDebt()) {
-            // We are reducing our collateral after reducing debt
+            // this will repay full debt an withdraw the whole amount of want deposited
+
+            // Withdraw as much want as we can
+            fMint.mustWithdrawMax(
+                address(want),
+                fMint.getCollateralLowestDebtRatio4dec()
+            );
+
+            // Buy some fusd with want
+            buyFusdWithWant(balanceOfDebt());
+            // Repay all
+            fMint.mustRepayMax(address(fUSD));
+
             fMint.mustWithdraw(address(want), _amount);
         } else {
-            // jmonteer: is it possible to reduce debt and not be able to reach _targetDebt?
-            require(_targetDebt == balanceOfDebt(), "!targetDebt not reached");
+            // this might withdraw more `want` than strictly required
+            // excess want will be reinvested in the next adjustPosition(...)
+            // eg. if fUSD has not been minted and wFTM has gone up in price so collateral is >> getTargetRatio()
+            // in that case we will withdraw more than required (down to getTargetRatio) and excess will be reinvested
+            fMint.mustWithdrawMax(address(want), getTargetRatio());
         }
     }
 
