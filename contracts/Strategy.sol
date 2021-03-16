@@ -213,9 +213,6 @@ contract Strategy is BaseStrategy {
         // Reduce the debt to the target (withdraw from fUSDVault and repay debt)
         reduceDebt(_targetDebt);
 
-        // jmonteer: is it possible to reduce debt and not be able to reach _targetDebt?
-        require(_targetDebt == balanceOfDebt(), "!targetDebt not reached");
-
         if (_targetDebt == 0) {
             // Since we have a mint fee, we might have never made enough profit
             // to pay back, at this point we would need to sell wFTM for fUSD to
@@ -234,9 +231,12 @@ contract Strategy is BaseStrategy {
 
             // Now we can withdraw all
             fMint.mustWithdraw(address(want), balanceOfCollateral());
-        } else {
+        } else if (_targetDebt == balanceOfDebt()) {
             // We are reducing our collateral after reducing debt
             fMint.mustWithdraw(address(want), _amount);
+        } else {
+            // jmonteer: is it possible to reduce debt and not be able to reach _targetDebt?
+            require(_targetDebt == balanceOfDebt(), "!targetDebt not reached");
         }
     }
 
