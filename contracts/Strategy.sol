@@ -200,7 +200,7 @@ contract Strategy is BaseStrategy {
 
     function reduceCollateral(uint256 _amount) internal {
         // if balanceOfCollateral is not enough, we reduce max amount available
-        if (balanceOfCollateral() >= amount) _amount = balanceOfCollateral();
+        if (balanceOfCollateral() >= _amount) _amount = balanceOfCollateral();
 
         uint256 _targetCollateral = balanceOfCollateral().sub(_amount);
         uint256 _targetDebt = getTargetFusdDebt(_targetCollateral);
@@ -281,6 +281,12 @@ contract Strategy is BaseStrategy {
                 .mul(RATIO_DECIMALS)
                 .div(RATIO_DECIMALS.sub(fee4dec)) // 100% - fee%
                 .add(1);
+
+        // The amount to be minted needs to be higher than the fee (see fMint.mustMint code)
+        if (_amountToMint <= 1) {
+            return;
+        }
+
         fMint.mustMint(address(fUSD), Math.min(_toMint, _amountToMint));
         fusdVault.deposit();
     }
