@@ -239,7 +239,8 @@ contract Strategy is BaseStrategy {
             // Repay all
             fMint.mustRepayMax(address(fUSD));
 
-            fMint.mustWithdraw(address(want), _amount);
+            // Withdraw the remaining of the collateral which is < of _amount
+            fMint.mustWithdraw(address(want), balanceOfCollateral());
         } else {
             // this might withdraw more `want` than strictly required
             // excess want will be reinvested in the next adjustPosition(...)
@@ -282,14 +283,18 @@ contract Strategy is BaseStrategy {
         // We should only mint what we can deposit
         // We scale amountToMint up to account for mint fee
         uint256 maxDeposit = fusdVault.availableDepositLimit();
-        uint256 fee4dec = fMint.getFMintFee4dec();
-        // amountToMint is greater than maxDeposit because there is a minting fee (which is taken from the minted amount)
-        // ex. user mints 100 but receives 99.5 (0.5% minting fee)
-        uint256 _amountToMint =
-            maxDeposit
+        uint256 _amountToMint = _toMint;
+
+        if (maxDeposit < _toMint) {
+            uint256 fee4dec = fMint.getFMintFee4dec();
+            // amountToMint is greater than maxDeposit because there is a minting
+            // fee (which is taken from the minted amount)
+            // ex. user mints 100 but receives 99.5 (0.5% minting fee)
+            _amountToMint = maxDeposit
                 .mul(RATIO_DECIMALS)
                 .div(RATIO_DECIMALS.sub(fee4dec)) // 100% - fee%
                 .add(1);
+        }
 
         // The amount to be minted needs to be higher than the fee (see fMint.mustMint code)
         if (_amountToMint <= 1) {
