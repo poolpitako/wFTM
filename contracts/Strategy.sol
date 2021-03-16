@@ -85,8 +85,10 @@ contract Strategy is BaseStrategy {
     {
         // Calculate profit from claiming wftm and profit from the fUSD vault
         uint256 balanceOfWantBefore = balanceOfWant();
-        claimWftmProfit();
-        claimFusdProfit();
+
+        claimWftmProfit(); // claim WTFM rewards earned
+        claimFusdProfit(); // claim fUSD profits and sell for WTFM
+
         _profit = balanceOfWant().sub(balanceOfWantBefore);
 
         if (_debtOutstanding > 0) {
@@ -103,8 +105,7 @@ contract Strategy is BaseStrategy {
 
     function claimWftmProfit() internal {
         // Get profit from wFTM staking contract
-        // TODO: Check the diff between rewardStash and rewardEarned
-        if (fStake.rewardStash(address(this)) > 0) {
+        if (fStake.rewardEarned(address(this)) > 0) {
             fStake.mustRewardClaim();
         }
     }
@@ -198,7 +199,8 @@ contract Strategy is BaseStrategy {
     }
 
     function reduceCollateral(uint256 _amount) internal {
-        require(balanceOfCollateral() >= _amount, "Not enough collateral");
+        // if balanceOfCollateral is not enough, we reduce max amount available
+        if (balanceOfCollateral() >= amount) _amount = balanceOfCollateral();
 
         uint256 _targetCollateral = balanceOfCollateral().sub(_amount);
         uint256 _targetDebt = getTargetFusdDebt(_targetCollateral);
@@ -208,8 +210,11 @@ contract Strategy is BaseStrategy {
             _targetDebt = 0;
         }
 
-        // Reduce the debt to the target
+        // Reduce the debt to the target (withdraw from fUSDVault and repay debt)
         reduceDebt(_targetDebt);
+
+        // jmonteer: is it possible to reduce debt and not be able to reach _targetDebt?
+        require(_targetDebt == balanceOfDebt(), "!targetDebt not reached");
 
         if (_targetDebt == 0) {
             // Since we have a mint fee, we might have never made enough profit
@@ -247,8 +252,12 @@ contract Strategy is BaseStrategy {
             return;
         }
 
+        // take enough fUSD balance to repay required debt
         uint256 _toPayback = _actual.sub(_target);
         withdrawFromFusdVault(_toPayback);
+
+        // repay max debt (mininum value between balanceFUSD and totalDebt)
+        // NOTE: debt may still be != 0 after this even if _target == 0 (if not enough balanceFUSD to repay totalDebt)
         fMint.mustRepayMax(address(fUSD));
     }
 
