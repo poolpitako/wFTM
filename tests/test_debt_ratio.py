@@ -1,7 +1,7 @@
 from brownie import Wei
 
 
-def test_increasing_ratio(wFTM, wFTM_whale, vault, strategy, gov, fusdVault, fMint):
+def test_increasing_ratio(wFTM, wFTM_whale, vault, strategy, gov):
     amount = Wei("2000 ether")
     wFTM.transfer(gov, amount, {"from": wFTM_whale})
     wFTM.approve(vault, 2 ** 256 - 1, {"from": gov})
@@ -24,4 +24,5 @@ def test_increasing_ratio(wFTM, wFTM_whale, vault, strategy, gov, fusdVault, fMi
     vault.updateStrategyDebtRatio(strategy, 0, {"from": gov})
     tx = strategy.harvest({"from": gov})
     assert strategy.balanceOfCollateral() == 0
+    assert strategy.balanceOfDebt() == 0
     assert vault.strategies(strategy).dict()["totalDebt"] == 0

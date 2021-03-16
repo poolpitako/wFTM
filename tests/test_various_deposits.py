@@ -2,7 +2,7 @@ import brownie
 from brownie import Contract, Wei
 
 
-def test_happy_path(
+def test_various(
     chain,
     gov,
     vault,
@@ -16,8 +16,6 @@ def test_happy_path(
     fUSD,
     fusdVault,
     fUSD_whale,
-    fMint,
-    fStaking,
 ):
     wFTM.transfer(alice, Wei("1000 ether"), {"from": wFTM_whale})
     wFTM.approve(vault, 2 ** 256 - 1, {"from": alice})
@@ -30,7 +28,6 @@ def test_happy_path(
 
     # Donate some fUSD to the fusdVault to mock earnings
     fUSD.transfer(fusdVault, Wei("10 ether"), {"from": fUSD_whale})
-
 
     wFTM.transfer(bob, Wei("2000 ether"), {"from": wFTM_whale})
     wFTM.approve(vault, 2 ** 256 - 1, {"from": bob})
@@ -54,6 +51,6 @@ def test_happy_path(
     assert wFTM.balanceOf(bob) > Wei("1000 ether")
     assert strategy.balanceOfCollateral() == 0
     assert strategy.balanceOfDebt() == 0
-    assert strategy.balanceOfFusd() == 0
+    assert strategy.balanceOfFusd() < Wei("0.5 ether")  # rounding error
     assert strategy.balanceOfFusdInVault() == 0
     assert fusdVault.totalAssets() == 0

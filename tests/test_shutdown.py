@@ -1,7 +1,7 @@
 from brownie import Wei
 
 
-def test_shutdown(wFTM, wFTM_whale, vault, strategy, gov, fusdVault, fMint):
+def test_shutdown(wFTM, wFTM_whale, vault, strategy, gov):
     amount = Wei("2000 ether")
     wFTM.transfer(gov, amount, {"from": wFTM_whale})
     wFTM.approve(vault, 2 ** 256 - 1, {"from": gov})

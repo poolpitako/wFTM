@@ -1,7 +1,7 @@
 from brownie import Wei, accounts
 
 
-def test_yvusd_limit(wFTM, wFTM_whale, vault, strategy, gov, fusdVault, fMint):
+def test_yvusd_limit(wFTM, wFTM_whale, vault, strategy, gov, fusdVault):
     amount = Wei("10000 ether")
     wFTM.transfer(gov, amount, {"from": wFTM_whale})
     wFTM.approve(vault, 2 ** 256 - 1, {"from": gov})
