@@ -113,3 +113,8 @@ def fusdVault(accounts):
     fusd_gov = accounts.at(vault.governance(), force=True)
     vault.setDepositLimit(Wei("1000 ether"), {"from": fusd_gov})
     yield vault
+
+
+@pytest.fixture
+def allow_list(gov, AllowList):
+    yield gov.deploy(AllowList)
