@@ -16,7 +16,7 @@ def main():
         print(f"earned: {earned/1e18} ratio: {current_ratio}")
 
         if earned > Wei("1 ether"):
-            s2.harvest({"from": dev, "gas_price": "1 gwei"})
+            s2.harvest({"from": dev, "gas_price": "1 gwei", "gas_limit": "8500000"})
         elif current_ratio < 53000:
             s2.tend({"from": dev, "gas_price": "1 gwei"})
 
