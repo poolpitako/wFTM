@@ -20,7 +20,8 @@ def test_allow_list(gov, alice, fusdVault, allow_list, bob, fUSD, fUSD_whale):
         fusdVault.deposit({"from": alice})
 
     # Afer being invited she should be able to deposit!
-    allow_list.invite_guest(alice, {"from": gov})
+    tx = allow_list.invite_guest(alice, {"from": gov})
+    assert tx.events["GuestInvited"]["guest"] == alice
     fusdVault.deposit({"from": alice})
 
     # Whale is not allowed to join the party...
@@ -29,7 +30,8 @@ def test_allow_list(gov, alice, fusdVault, allow_list, bob, fUSD, fUSD_whale):
         fusdVault.deposit({"from": fUSD_whale})
 
     # Until Bob is added as bouncer and invites the whale
-    allow_list.add_bouncer(bob, {"from": gov})
+    tx = allow_list.add_bouncer(bob, {"from": gov})
+    assert tx.events["BouncerAdded"]["bouncer"] == bob
     allow_list.invite_guest(fUSD_whale, {"from": bob})
 
     # Whale does whale things
